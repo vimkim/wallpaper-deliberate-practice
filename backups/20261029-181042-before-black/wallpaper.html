@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Deliberate Practice Wallpaper</title>
+<style>
+  @font-face {
+    font-family: "Inter";
+    src: url("fonts/Inter-latin.woff2") format("woff2");
+    font-weight: 100 900;
+    font-display: block;
+  }
+
+  /* Light (default) */
+  :root {
+    --bg: #E7E7E5;
+    --text: #35373A;
+    --number: #9A9C9E;
+    --divider: #BFC1C2;
+    --reference: #85888A;
+    /* 1u = 1px at the 2560x1440 design size; scales uniformly, so no reflow */
+    --u: min(100vw / 2560, 100vh / 1440);
+  }
+  /* Dark variant: open with ?theme=dark */
+  :root[data-theme="dark"] {
+    --bg: #2F3133;
+    --text: #E5E5E3;
+    --number: #777A7C;
+    --divider: #55585A;
+    --reference: #9A9C9E;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: Inter, "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: geometricPrecision;
+    font-feature-settings: "kern" 1;
+  }
+
+  .wallpaper { position: relative; width: 100vw; height: 100vh; }
+
+  .principles {
+    position: absolute;
+    left: 50%;
+    top: 46%;
+    transform: translate(-50%, -50%);
+    width: calc(1536 * var(--u));           /* 60% of 2560 */
+    height: calc(460 * var(--u));
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    align-items: stretch;
+  }
+
+  .principle {
+    padding: calc(8 * var(--u)) calc(56 * var(--u)) 0;
+  }
+  .principle + .principle { border-left: max(1px, calc(1 * var(--u))) solid var(--divider); }
+
+  .num {
+    display: block;
+    font-weight: 300;
+    font-size: calc(96 * var(--u));
+    line-height: 1;
+    letter-spacing: -0.02em;
+    color: var(--number);
+    font-variant-numeric: tabular-nums;
+  }
+  .text {
+    margin-top: calc(48 * var(--u));
+    font-weight: 400;
+    font-size: calc(38 * var(--u));
+    line-height: 1.32;
+    letter-spacing: -0.005em;
+  }
+
+  .reference {
+    position: absolute;
+    left: calc(80 * var(--u));
+    bottom: calc(70 * var(--u));
+    font-size: calc(19 * var(--u));
+    line-height: 1.45;
+    color: var(--reference);
+  }
+  .reference .label { letter-spacing: 0.02em; }
+  .reference cite { font-style: italic; }
+
+  /* Portrait monitors: same text, 2x2 grid so type stays readable */
+  @media (orientation: portrait) {
+    :root { --u: min(100vw / 1440, 100vh / 2560); }
+    .principles {
+      top: 45%;
+      width: calc(1000 * var(--u));
+      height: auto;
+      grid-template-columns: repeat(2, 1fr);
+    }
+    .principle { padding: calc(8 * var(--u)) calc(56 * var(--u)) calc(80 * var(--u)); }
+    .principle:nth-child(3) { border-left: none; }
+    .principle:nth-child(n+3) {
+      border-top: max(1px, calc(1 * var(--u))) solid var(--divider);
+      padding-top: calc(80 * var(--u));
+      padding-bottom: calc(8 * var(--u));
+    }
+  }
+</style>
+<script>
+  if (new URLSearchParams(location.search).get("theme") === "dark")
+    document.documentElement.dataset.theme = "dark";
+</script>
+</head>
+<body>
+<main class="wallpaper">
+  <section class="principles">
+    <article class="principle">
+      <span class="num">01</span>
+      <p class="text">Practice with deliberate purpose.</p>
+    </article>
+    <article class="principle">
+      <span class="num">02</span>
+      <p class="text">Push your edge.</p>
+    </article>
+    <article class="principle">
+      <span class="num">03</span>
+      <p class="text">Get fast, precise feedback.</p>
+    </article>
+    <article class="principle">
+      <span class="num">04</span>
+      <p class="text">Repeat. Correct. Improve.</p>
+    </article>
+  </section>
+
+  <footer class="reference">
+    <div class="label">Reference</div>
+    <cite>Peak: Secrets from the New Science of Expertise</cite>
+    <div>K. Anders Ericsson, Robert Pool</div>
+  </footer>
+</main>
+</body>
+</html>
