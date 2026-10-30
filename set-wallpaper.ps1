@@ -45,7 +45,7 @@ foreach ($m in $mons) {
   if ($List) { "$i $($m.Id.Split('#')[1]) $(if ($size) { $size } else { '?' })$state $($m.Cur)"; $i++; continue }
   if ($size -and (Test-Path (Join-Path $Dir "deliberate-practice-$Theme-$size.png"))) {
     $f = Join-Path $Dir "deliberate-practice-$Theme-$size.png"
-  } elseif ($m.Cur -like "*deliberate-practice-*") {  # size unknown: keep its existing image
+  } elseif (-not $size -and $m.Cur -like "*deliberate-practice-*") {  # size unknown: keep its existing image
     $f = $m.Cur -replace '-(dark|light)-', "-$Theme-"
   } else { $f = Join-Path $Dir "deliberate-practice-$Theme-2560x1440.png" }
   [WP]::Set($m.Id, $f); "monitor $i $(if ($size) { $size } else { '?' })$state -> $(Split-Path $f -Leaf)"; $i++
