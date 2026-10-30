@@ -28,11 +28,19 @@ You can also invoke the renderer directly or specify a browser executable:
 ## Apply wallpapers
 
 ```powershell
-just install        # Apply dark, choosing each monitor's exact resolution if available
-just light          # Apply light
+just install        # Apply dark to the desktop and lock screen
+just light          # Apply light to the desktop and lock screen
+just wallpaper      # Apply only the desktop wallpaper
+just lock-screen    # Apply only the lock-screen image
 just monitors       # List monitor resolutions and current wallpaper files
 just                # Show all commands
 ```
 
 Run `just install` after generating a new size. Displays without an exact-size
 image use the existing fallback image.
+
+Desktop wallpaper uses each monitor's resolution. The lock screen uses the primary
+monitor's resolution and keeps a persistent image copy in
+`%LOCALAPPDATA%\DeliberatePracticeWallpaper`. It uses the current account's
+[Windows lock-screen API](https://learn.microsoft.com/en-us/uwp/api/windows.system.userprofile.lockscreen.setimagefileasync)
+through Windows PowerShell; no administrator rights are needed.
