@@ -3,7 +3,8 @@ param(
     [ValidateRange(1, 16384)][int]$Width = 2560,
     [ValidateRange(1, 16384)][int]$Height = 1600,
     [ValidateSet('dark', 'light', 'both')][string]$Theme = 'both',
-    [string]$BrowserPath
+    [string]$BrowserPath,
+    [string]$OutputDirectory = $PSScriptRoot
 )
 
 $ErrorActionPreference = 'Stop'
@@ -25,6 +26,8 @@ if (-not $BrowserPath -or -not (Test-Path -LiteralPath $BrowserPath -PathType Le
     throw 'Install Microsoft Edge or Google Chrome, or specify its executable with -BrowserPath.'
 }
 $BrowserPath = (Resolve-Path -LiteralPath $BrowserPath).Path
+$OutputDirectory = [System.IO.Path]::GetFullPath($OutputDirectory)
+New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
 
 Add-Type -AssemblyName System.Drawing
 $temporaryRoot = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())
@@ -69,7 +72,7 @@ try {
         } finally {
             $image.Dispose()
         }
-        $outputPath = Join-Path $PSScriptRoot "deliberate-practice-$variant-${Width}x${Height}.png"
+        $outputPath = Join-Path $OutputDirectory "deliberate-practice-$variant-${Width}x${Height}.png"
         Copy-Item -LiteralPath $temporaryImage -Destination $outputPath -Force
         Write-Output "Generated $(Split-Path -Path $outputPath -Leaf) (${Width}x${Height})"
     }

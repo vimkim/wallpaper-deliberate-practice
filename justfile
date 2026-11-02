@@ -29,3 +29,7 @@ light: (install "light")
 # List monitors and their current wallpapers.
 @monitors:
     & '.\set-wallpaper.ps1' -List
+
+# Test multi-monitor installation without changing the desktop (requires Edge or Chrome).
+@test:
+    & '.\tests\test-wallpaper.ps1'

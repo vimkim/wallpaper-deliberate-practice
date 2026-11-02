@@ -1,53 +1,181 @@
-param([ValidateSet("dark","light")][string]$Theme = "dark", [string]$Dir = $PSScriptRoot, [switch]$List)
-Add-Type @"
-using System; using System.Runtime.InteropServices;
-[StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
-[ComImport, Guid("B92B56A9-8B55-4E14-9A89-0199BBB6F93B"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-public interface IDesktopWallpaper {
-  void SetWallpaper([MarshalAs(UnmanagedType.LPWStr)] string monitorID, [MarshalAs(UnmanagedType.LPWStr)] string wallpaper);
-  [return: MarshalAs(UnmanagedType.LPWStr)] string GetWallpaper([MarshalAs(UnmanagedType.LPWStr)] string monitorID);
-  [return: MarshalAs(UnmanagedType.LPWStr)] string GetMonitorDevicePathAt(uint monitorIndex);
-  uint GetMonitorDevicePathCount();
-  RECT GetMonitorRECT([MarshalAs(UnmanagedType.LPWStr)] string monitorID);
-  void SetBackgroundColor(uint color); uint GetBackgroundColor();
-  void SetPosition(int position); int GetPosition();
+[CmdletBinding()]
+param(
+    [ValidateSet('dark', 'light')][string]$Theme = 'dark',
+    [string]$Dir = $PSScriptRoot,
+    [string]$ImageDirectory = (Join-Path $env:LOCALAPPDATA 'DeliberatePracticeWallpaper\desktop'),
+    [switch]$List
+)
+
+$ErrorActionPreference = 'Stop'
+if (-not ('DeliberatePractice.DesktopWallpaper' -as [type])) {
+    Add-Type @'
+using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+
+namespace DeliberatePractice {
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct Rect { public int Left, Top, Right, Bottom; }
+
+    [ComImport, Guid("B92B56A9-8B55-4E14-9A89-0199BBB6F93B"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    internal interface IDesktopWallpaper {
+        void SetWallpaper([MarshalAs(UnmanagedType.LPWStr)] string monitorID, [MarshalAs(UnmanagedType.LPWStr)] string wallpaper);
+        [return: MarshalAs(UnmanagedType.LPWStr)] string GetWallpaper([MarshalAs(UnmanagedType.LPWStr)] string monitorID);
+        [return: MarshalAs(UnmanagedType.LPWStr)] string GetMonitorDevicePathAt(uint monitorIndex);
+        uint GetMonitorDevicePathCount();
+        [PreserveSig] int GetMonitorRECT([MarshalAs(UnmanagedType.LPWStr)] string monitorID, out Rect rect);
+        void SetBackgroundColor(uint color);
+        uint GetBackgroundColor();
+        void SetPosition(int position);
+        int GetPosition();
+    }
+
+    [ComImport, Guid("C2CF3110-460E-4fc1-B9D0-8A1C0C9CC4BD")]
+    internal class DesktopWallpaperClass { }
+
+    public sealed class Monitor {
+        public uint Index;
+        public string Id, Current;
+        public int Width, Height;
+        public bool Connected;
+    }
+
+    public static class DesktopWallpaper {
+        [DllImport("user32.dll")] private static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
+        [DllImport("user32.dll")] private static extern bool SetProcessDPIAware();
+
+        public static Monitor[] GetMonitors() {
+            // Read physical pixels even when monitors have different Windows scaling.
+            IntPtr previousContext = IntPtr.Zero;
+            try { previousContext = SetThreadDpiAwarenessContext(new IntPtr(-4)); }
+            catch (EntryPointNotFoundException) { SetProcessDPIAware(); }
+            var desktop = (IDesktopWallpaper)new DesktopWallpaperClass();
+            try {
+                var monitors = new List<Monitor>();
+                uint count = desktop.GetMonitorDevicePathCount();
+                for (uint i = 0; i < count; i++) {
+                    string id = desktop.GetMonitorDevicePathAt(i);
+                    var monitor = new Monitor { Index = i, Id = id };
+                    // Never pass a blank ID to SetWallpaper: NULL targets ALL monitors.
+                    if (!String.IsNullOrWhiteSpace(id)) {
+                        Rect rect;
+                        int result = desktop.GetMonitorRECT(id, out rect);
+                        if (result < 0) Marshal.ThrowExceptionForHR(result);
+                        monitor.Connected = result == 0 && rect.Right > rect.Left && rect.Bottom > rect.Top;
+                        if (monitor.Connected) {
+                            monitor.Width = rect.Right - rect.Left;
+                            monitor.Height = rect.Bottom - rect.Top;
+                        }
+                        monitor.Current = desktop.GetWallpaper(id);
+                    }
+                    monitors.Add(monitor);
+                }
+                return monitors.ToArray();
+            } finally {
+                Marshal.ReleaseComObject(desktop);
+                if (previousContext != IntPtr.Zero) SetThreadDpiAwarenessContext(previousContext);
+            }
+        }
+
+        public static void Set(string id, string path) {
+            if (String.IsNullOrWhiteSpace(id)) throw new ArgumentException("A specific monitor ID is required.", "id");
+            var desktop = (IDesktopWallpaper)new DesktopWallpaperClass();
+            try { desktop.SetWallpaper(id, path); }
+            finally { Marshal.ReleaseComObject(desktop); }
+        }
+
+        public static void Fit() {
+            var desktop = (IDesktopWallpaper)new DesktopWallpaperClass();
+            try { desktop.SetPosition(3); } // DWPOS_FIT: preserve proportions without cropping.
+            finally { Marshal.ReleaseComObject(desktop); }
+        }
+
+        public static int GetPosition() {
+            var desktop = (IDesktopWallpaper)new DesktopWallpaperClass();
+            try { return desktop.GetPosition(); }
+            finally { Marshal.ReleaseComObject(desktop); }
+        }
+    }
 }
-[ComImport, Guid("C2CF3110-460E-4fc1-B9D0-8A1C0C9CC4BD")] public class DesktopWallpaperClass {}
-public static class WP {
-  static IDesktopWallpaper D() { return (IDesktopWallpaper)new DesktopWallpaperClass(); }
-  public static string[] Monitors() { var d = D(); var n = d.GetMonitorDevicePathCount(); var a = new System.Collections.Generic.List<string>();
-    for (uint i = 0; i < n; i++) { var id = d.GetMonitorDevicePathAt(i);
-      try { var r = d.GetMonitorRECT(id); a.Add(id + "|" + (r.Right - r.Left) + "|" + (r.Bottom - r.Top)); }
-      catch (COMException) { a.Add(id + "|0|0"); } }  // inactive/disconnected monitor
-    return a.ToArray(); }
-  public static void Set(string id, string f) { D().SetWallpaper(id, f); }
-  public static string Get(string id) { return D().GetWallpaper(id); }
-  public static void SetById(uint i, string f) { var d = D(); d.SetWallpaper(d.GetMonitorDevicePathAt(i), f); }
-  public static void Fill() { D().SetPosition(4); }
-[DllImport("user32.dll")] public static extern bool SetProcessDPIAware(); }
-"@
-[WP]::SetProcessDPIAware() | Out-Null
-# Remember each monitor's size while it is connected (Windows reports 0x0 for disconnected ones)
-$mapFile = Join-Path $Dir "monitors.json"
-$sizes = @{}
-if (Test-Path $mapFile) { (Get-Content $mapFile -Raw | ConvertFrom-Json).PSObject.Properties | % { $sizes[$_.Name] = $_.Value } }
-$mons = [WP]::Monitors() | % { $id, $w, $h = $_ -split '\|'; [pscustomobject]@{ Id = $id; W = $w; H = $h; Cur = [WP]::Get($id) } }
-foreach ($m in $mons) { if ($m.W -ne '0') { $sizes[$m.Id] = "$($m.W)x$($m.H)" } }
-if (-not $List) {
-  $sizes | ConvertTo-Json | Set-Content $mapFile
-  # System-wide default first, so a monitor that later appears under a new ID gets it too
-  [WP]::Set($null, (Join-Path $Dir "deliberate-practice-$Theme-2560x1440.png"))
+'@
 }
-$i = 0
-foreach ($m in $mons) {
-  $size = if ($m.W -ne '0') { "$($m.W)x$($m.H)" } else { $sizes[$m.Id] }
-  $state = if ($m.W -ne '0') { "" } else { " (disconnected)" }
-  if ($List) { "$i $($m.Id.Split('#')[1]) $(if ($size) { $size } else { '?' })$state $($m.Cur)"; $i++; continue }
-  if ($size -and (Test-Path (Join-Path $Dir "deliberate-practice-$Theme-$size.png"))) {
-    $f = Join-Path $Dir "deliberate-practice-$Theme-$size.png"
-  } elseif (-not $size -and $m.Cur -like "*deliberate-practice-*") {  # size unknown: keep its existing image
-    $f = $m.Cur -replace '-(dark|light)-', "-$Theme-"
-  } else { $f = Join-Path $Dir "deliberate-practice-$Theme-2560x1440.png" }
-  [WP]::Set($m.Id, $f); "monitor $i $(if ($size) { $size } else { '?' })$state -> $(Split-Path $f -Leaf)"; $i++
+
+$monitors = @([DeliberatePractice.DesktopWallpaper]::GetMonitors())
+if ($List) {
+    foreach ($monitor in $monitors) {
+        $size = if ($monitor.Connected) { "$($monitor.Width)x$($monitor.Height)" } else { '? (disconnected)' }
+        $name = if ($monitor.Id) { ($monitor.Id -split '#')[1] } else { '(unknown)' }
+        Write-Output "$($monitor.Index) $name $size $($monitor.Current)"
+    }
+    return
 }
-if (-not $List) { [WP]::Fill() }
+
+$connected = @($monitors | Where-Object { $_.Connected -and -not [string]::IsNullOrWhiteSpace($_.Id) })
+if ($connected.Count -eq 0) { throw 'No connected monitors were found. No wallpapers were changed.' }
+$Dir = [System.IO.Path]::GetFullPath($Dir)
+$ImageDirectory = [System.IO.Path]::GetFullPath($ImageDirectory)
+Add-Type -AssemblyName System.Drawing
+$images = @{}
+
+function Get-WallpaperHash([string]$Path) {
+    $stream = [System.IO.File]::OpenRead($Path)
+    $hasher = [System.Security.Cryptography.SHA256]::Create()
+    try { return [BitConverter]::ToString($hasher.ComputeHash($stream)).Replace('-', '').ToLowerInvariant() }
+    finally { $stream.Dispose(); $hasher.Dispose() }
+}
+
+# Prepare every resolution before changing the desktop. Missing or incorrectly sized
+# images are rendered from the source instead of substituting a landscape fallback.
+foreach ($monitor in $connected) {
+    $width = $monitor.Width
+    $height = $monitor.Height
+    $size = "${width}x${height}"
+    if ($images.ContainsKey($size)) { continue }
+    $sourceImage = Join-Path $Dir "deliberate-practice-$Theme-$size.png"
+    $valid = $false
+    if (Test-Path -LiteralPath $sourceImage -PathType Leaf) {
+        $image = [System.Drawing.Image]::FromFile($sourceImage)
+        try { $valid = $image.Width -eq $width -and $image.Height -eq $height }
+        finally { $image.Dispose() }
+    }
+    if (-not $valid) {
+        & (Join-Path $PSScriptRoot 'render-wallpaper.ps1') -Width $width -Height $height -Theme $Theme -OutputDirectory $Dir
+    }
+    $image = [System.Drawing.Image]::FromFile($sourceImage)
+    try {
+        if ($image.Width -ne $width -or $image.Height -ne $height) {
+            throw "Wallpaper $sourceImage must be ${width}x${height}. No wallpapers were changed."
+        }
+    } finally { $image.Dispose() }
+
+    # Windows must retain a path outside a temporary Git worktree. A content hash
+    # also prevents Windows from reusing a stale cached image after a design edit.
+    $hash = Get-WallpaperHash $sourceImage
+    $installedImage = Join-Path $ImageDirectory "deliberate-practice-$Theme-$size-$hash.png"
+    New-Item -ItemType Directory -Path $ImageDirectory -Force | Out-Null
+    if (-not (Test-Path -LiteralPath $installedImage -PathType Leaf) -or
+        (Get-WallpaperHash $installedImage) -ine $hash) {
+        Copy-Item -LiteralPath $sourceImage -Destination $installedImage -Force
+    }
+    $images[$size] = $installedImage
+}
+
+foreach ($monitor in $connected) {
+    $size = "$($monitor.Width)x$($monitor.Height)"
+    [DeliberatePractice.DesktopWallpaper]::Set($monitor.Id, $images[$size])
+}
+[DeliberatePractice.DesktopWallpaper]::Fit()
+
+# Read Windows' assignments back; do not report success on a silent failure.
+$currentMonitors = @([DeliberatePractice.DesktopWallpaper]::GetMonitors())
+foreach ($monitor in $connected) {
+    $size = "$($monitor.Width)x$($monitor.Height)"
+    $current = $currentMonitors | Where-Object { $_.Id -eq $monitor.Id -and $_.Connected }
+    if (-not $current -or $current.Current -ine $images[$size]) {
+        throw "Windows did not retain the requested wallpaper for monitor $($monitor.Index)."
+    }
+    Write-Output "monitor $($monitor.Index) $size -> $(Split-Path -Path $images[$size] -Leaf)"
+}
+if ([DeliberatePractice.DesktopWallpaper]::GetPosition() -ne 3) {
+    throw 'Windows did not retain the Fit wallpaper position.'
+}
