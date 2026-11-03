@@ -6,6 +6,9 @@ $ErrorActionPreference = 'Stop'
 if ('DeliberatePractice.DesktopWallpaper' -as [type]) {
     throw 'Run this test in a fresh PowerShell process.'
 }
+# Exercise the real discovery code in its own process before mocking installation.
+& powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test-monitor-discovery.ps1')
+if ($LASTEXITCODE -ne 0) { throw 'Monitor discovery regression tests failed.' }
 Add-Type @'
 using System;
 using System.Collections.Generic;

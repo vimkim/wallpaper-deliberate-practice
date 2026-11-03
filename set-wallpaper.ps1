@@ -51,30 +51,41 @@ namespace DeliberatePractice {
             catch (EntryPointNotFoundException) { SetProcessDPIAware(); }
             var desktop = (IDesktopWallpaper)new DesktopWallpaperClass();
             try {
-                var monitors = new List<Monitor>();
-                uint count = desktop.GetMonitorDevicePathCount();
-                for (uint i = 0; i < count; i++) {
-                    string id = desktop.GetMonitorDevicePathAt(i);
-                    var monitor = new Monitor { Index = i, Id = id };
-                    // Never pass a blank ID to SetWallpaper: NULL targets ALL monitors.
-                    if (!String.IsNullOrWhiteSpace(id)) {
-                        Rect rect;
-                        int result = desktop.GetMonitorRECT(id, out rect);
-                        if (result < 0) Marshal.ThrowExceptionForHR(result);
-                        monitor.Connected = result == 0 && rect.Right > rect.Left && rect.Bottom > rect.Top;
-                        if (monitor.Connected) {
-                            monitor.Width = rect.Right - rect.Left;
-                            monitor.Height = rect.Bottom - rect.Top;
-                        }
-                        monitor.Current = desktop.GetWallpaper(id);
-                    }
-                    monitors.Add(monitor);
-                }
-                return monitors.ToArray();
+                return ReadMonitors(desktop);
             } finally {
                 Marshal.ReleaseComObject(desktop);
                 if (previousContext != IntPtr.Zero) SetThreadDpiAwarenessContext(previousContext);
             }
+        }
+
+        internal static Monitor[] ReadMonitors(IDesktopWallpaper desktop) {
+            var monitors = new List<Monitor>();
+            uint count = desktop.GetMonitorDevicePathCount();
+            for (uint i = 0; i < count; i++) {
+                string id = desktop.GetMonitorDevicePathAt(i);
+                var monitor = new Monitor { Index = i, Id = id };
+                // Never pass a blank ID to SetWallpaper: NULL targets ALL monitors.
+                if (!String.IsNullOrWhiteSpace(id)) {
+                    Rect rect;
+                    int result = desktop.GetMonitorRECT(id, out rect);
+                    // Windows also returns E_FAIL for stale device paths after docking
+                    // or reconnecting a display, rather than the documented S_FALSE.
+                    // Do not let those saved entries abort discovery of active screens.
+                    if (result == unchecked((int)0x80004005)) {
+                        monitors.Add(monitor);
+                        continue;
+                    }
+                    if (result < 0) Marshal.ThrowExceptionForHR(result);
+                    monitor.Connected = result == 0 && rect.Right > rect.Left && rect.Bottom > rect.Top;
+                    if (monitor.Connected) {
+                        monitor.Width = rect.Right - rect.Left;
+                        monitor.Height = rect.Bottom - rect.Top;
+                    }
+                    monitor.Current = desktop.GetWallpaper(id);
+                }
+                monitors.Add(monitor);
+            }
+            return monitors.ToArray();
         }
 
         public static void Set(string id, string path) {

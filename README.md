@@ -41,7 +41,8 @@ resolution, including portrait rotation and mixed Windows display scaling. Each
 monitor gets its own exact-size image. Missing or incorrectly sized images are
 generated automatically using Edge or Chrome before any desktop wallpapers change.
 Disconnected monitors keep their current assignments; rerun after reconnecting or
-rotating a display.
+rotating a display. Stale device IDs saved by Windows after reconnecting or docking
+are skipped, so they cannot prevent installation on connected monitors.
 
 Windows uses [Fit](https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/ne-shobjidl_core-desktop_wallpaper_position)
 to preserve proportions without cropping. The design uses
@@ -72,4 +73,5 @@ Run `just test` (or `powershell.exe -NoProfile -File .\tests\test-wallpaper.ps1`
 It tests installation with simulated monitors without changing your desktop,
 including both themes, portrait/landscape resolutions, disconnected/blank IDs,
 repeat installations, rendering missing or wrongly sized files, and failure
-handling. Rendering checks require Edge or Chrome.
+handling. Monitor discovery is also tested against simulated Windows API results,
+including stale device paths that return `E_FAIL`. Rendering checks require Edge or Chrome.
