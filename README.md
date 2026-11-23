@@ -43,6 +43,12 @@ generated automatically using Edge or Chrome before any desktop wallpapers chang
 Disconnected monitors keep their current assignments; rerun after reconnecting or
 rotating a display. Stale device IDs saved by Windows after reconnecting or docking
 are skipped, so they cannot prevent installation on connected monitors.
+If the wallpaper API omits an active monitor's ID or rejects its rectangle, the
+installer recovers its full device ID and physical dimensions from Windows' active
+desktop inventory. Identical monitor models remain separate targets. Numbers in
+`just monitors` are zero-based discovery indexes, including saved disconnected
+entries; recovered monitors are appended, so these numbers may differ from Windows
+Display Settings.
 
 Windows uses [Fit](https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/ne-shobjidl_core-desktop_wallpaper_position)
 to preserve proportions without cropping. The design uses
@@ -74,4 +80,5 @@ It tests installation with simulated monitors without changing your desktop,
 including both themes, portrait/landscape resolutions, disconnected/blank IDs,
 repeat installations, rendering missing or wrongly sized files, and failure
 handling. Monitor discovery is also tested against simulated Windows API results,
-including stale device paths that return `E_FAIL`. Rendering checks require Edge or Chrome.
+including stale device paths that return `E_FAIL`, blank or missing active IDs,
+rejected rectangles, and duplicate device IDs. Rendering checks require Edge or Chrome.

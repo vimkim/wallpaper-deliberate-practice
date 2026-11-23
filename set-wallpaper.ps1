@@ -44,28 +44,103 @@ namespace DeliberatePractice {
         [DllImport("user32.dll")] private static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
         [DllImport("user32.dll")] private static extern bool SetProcessDPIAware();
 
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        private struct MonitorInfo {
+            public int Size;
+            public Rect Bounds, WorkArea;
+            public uint Flags;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string DeviceName;
+        }
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        private struct DisplayDevice {
+            public int Size;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string Name;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string Description;
+            public uint Flags;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string Id;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string Key;
+        }
+
+        private delegate bool MonitorEnumProc(IntPtr monitor, IntPtr dc, ref Rect rect, IntPtr data);
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool EnumDisplayMonitors(IntPtr dc, IntPtr clip, MonitorEnumProc callback, IntPtr data);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern bool GetMonitorInfo(IntPtr monitor, ref MonitorInfo info);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern bool EnumDisplayDevices(string name, uint index, ref DisplayDevice device, uint flags);
+
+        private static Monitor[] ReadActiveMonitors() {
+            var monitors = new List<Monitor>();
+            int error = 0;
+            bool completed = EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero,
+                delegate(IntPtr handle, IntPtr dc, ref Rect rect, IntPtr data) {
+                    var info = new MonitorInfo();
+                    info.Size = Marshal.SizeOf(info);
+                    if (!GetMonitorInfo(handle, ref info)) {
+                        error = Marshal.GetLastWin32Error();
+                        return false;
+                    }
+                    for (uint i = 0; ; i++) {
+                        var device = new DisplayDevice();
+                        device.Size = Marshal.SizeOf(device);
+                        // EDD_GET_DEVICE_INTERFACE_NAME returns the full monitor ID,
+                        // including the port identity for otherwise identical models.
+                        if (!EnumDisplayDevices(info.DeviceName, i, ref device, 1)) break;
+                        if ((device.Flags & 1) == 0 || (device.Flags & 8) != 0 ||
+                            String.IsNullOrWhiteSpace(device.Id)) continue;
+                        monitors.Add(new Monitor {
+                            Id = device.Id, Connected = true,
+                            Width = info.Bounds.Right - info.Bounds.Left,
+                            Height = info.Bounds.Bottom - info.Bounds.Top
+                        });
+                    }
+                    return true;
+                }, IntPtr.Zero);
+            if (!completed) throw new System.ComponentModel.Win32Exception(
+                error != 0 ? error : Marshal.GetLastWin32Error());
+            return monitors.ToArray();
+        }
+
         public static Monitor[] GetMonitors() {
             // Read physical pixels even when monitors have different Windows scaling.
             IntPtr previousContext = IntPtr.Zero;
             try { previousContext = SetThreadDpiAwarenessContext(new IntPtr(-4)); }
             catch (EntryPointNotFoundException) { SetProcessDPIAware(); }
-            var desktop = (IDesktopWallpaper)new DesktopWallpaperClass();
+            IDesktopWallpaper desktop = null;
             try {
-                return ReadMonitors(desktop);
+                desktop = (IDesktopWallpaper)new DesktopWallpaperClass();
+                return ReadMonitors(desktop, ReadActiveMonitors());
             } finally {
-                Marshal.ReleaseComObject(desktop);
+                if (desktop != null) Marshal.ReleaseComObject(desktop);
                 if (previousContext != IntPtr.Zero) SetThreadDpiAwarenessContext(previousContext);
             }
         }
 
-        internal static Monitor[] ReadMonitors(IDesktopWallpaper desktop) {
+        internal static Monitor[] ReadMonitors(IDesktopWallpaper desktop, Monitor[] activeMonitors) {
             var monitors = new List<Monitor>();
+            var activeById = new Dictionary<string, Monitor>(StringComparer.OrdinalIgnoreCase);
+            foreach (Monitor active in activeMonitors) {
+                if (active.Connected && !String.IsNullOrWhiteSpace(active.Id) &&
+                    active.Width > 0 && active.Height > 0 && !activeById.ContainsKey(active.Id))
+                    activeById.Add(active.Id, active);
+            }
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             uint count = desktop.GetMonitorDevicePathCount();
             for (uint i = 0; i < count; i++) {
                 string id = desktop.GetMonitorDevicePathAt(i);
                 var monitor = new Monitor { Index = i, Id = id };
                 // Never pass a blank ID to SetWallpaper: NULL targets ALL monitors.
-                if (!String.IsNullOrWhiteSpace(id)) {
+                if (!String.IsNullOrWhiteSpace(id) && seen.Add(id)) {
+                    Monitor active;
+                    if (activeById.TryGetValue(id, out active)) {
+                        monitor.Connected = true;
+                        monitor.Width = active.Width;
+                        monitor.Height = active.Height;
+                        monitor.Current = desktop.GetWallpaper(id);
+                        monitors.Add(monitor);
+                        continue;
+                    }
                     Rect rect;
                     int result = desktop.GetMonitorRECT(id, out rect);
                     // Windows also returns E_FAIL for stale device paths after docking
@@ -84,6 +159,20 @@ namespace DeliberatePractice {
                     monitor.Current = desktop.GetWallpaper(id);
                 }
                 monitors.Add(monitor);
+            }
+            // The wallpaper API can return a blank ID for an active monitor, and
+            // GetMonitorRECT may reject its real ID. Use the active desktop's
+            // physical rectangle and explicit device ID instead of guessing which
+            // saved/blank entry belongs to it. Keep existing indices intact.
+            foreach (Monitor active in activeMonitors) {
+                if (!String.IsNullOrWhiteSpace(active.Id) && activeById.ContainsKey(active.Id) && seen.Add(active.Id)) {
+                    Monitor recovered = activeById[active.Id];
+                    monitors.Add(new Monitor {
+                        Index = (uint)monitors.Count, Id = recovered.Id, Connected = true,
+                        Width = recovered.Width, Height = recovered.Height,
+                        Current = desktop.GetWallpaper(recovered.Id)
+                    });
+                }
             }
             return monitors.ToArray();
         }
